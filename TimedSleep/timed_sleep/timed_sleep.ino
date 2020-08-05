@@ -21,7 +21,7 @@
 #include <DS3232RTC.h>  //RTC Library https://github.com/JChristensen/DS3232RTC
 
 //RTC Module global variables
-const int time_interval=3;// Sets the wakeup intervall in minutes
+const int time_interval=1;// Sets the wakeup intervall in minutes
 
 void setup() {
   Serial.begin(115200);//Start Serial Comunication
