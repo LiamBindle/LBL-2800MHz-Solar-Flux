@@ -15,6 +15,9 @@ void wakeup(){
 }
 
 void go_to_sleep() {
+    RTC.squareWave(SQWAVE_NONE);
+    RTC.alarmInterrupt(ALARM_1, true);
+    
     time_t t = RTC.get();
 
     byte next_wakeup = (int(hour(t)/wakeup_interval_hours)+1)*wakeup_interval_hours % 24;
@@ -35,7 +38,7 @@ void go_to_sleep() {
     Serial.println("Woke up at " + String(hour(t)) + ":" + String(minute(t)));
 }
 
-#define NSAMPLES 10
+#define NSAMPLES 5
 #define ANALOGINPUTS 3
 
 volatile bool time_to_sample = false;
@@ -45,13 +48,17 @@ void sample_interrupt() {
 }
 
 void sample_loop() {
-  int sampling_duration = 10;
+  int sampling_duration = 3;
   int analog_input[ANALOGINPUTS] = {8, 9, 10};
   char temp_cstr[128];
   bool led_value = false;
+  time_t t = RTC.get();
 
-  
-  File datafile = SD.open("test.csv", FILE_WRITE);
+  int elapsed_days = elapsedDays(t) - 18000;
+  sprintf(temp_cstr, "d%dh%d.csv", elapsed_days, hour(t));
+  String fname(temp_cstr);
+  Serial.println("Opening '" + fname + "'");
+  File datafile = SD.open(fname, FILE_WRITE);
 
   String header = "DATE";
   for(int i = 0; i < ANALOGINPUTS; ++i) {
@@ -98,7 +105,7 @@ void sample_loop() {
       sample_std[i] = sqrt(sample_std[i]/(unsigned long)NSAMPLES);
     } 
     
-    time_t t = RTC.get();
+    t = RTC.get();
     sprintf(temp_cstr, "%4d-%02d-%02dT%02d:%02d:%02d", year(t), month(t), day(t), hour(t), minute(t), second(t));
     String str(temp_cstr);
     for(int i = 0; i < ANALOGINPUTS; ++i) {
@@ -111,7 +118,9 @@ void sample_loop() {
     Serial.println(str);
     datafile.println(str);
   }
+  Serial.println("Closing '" + fname + "'");
   datafile.close();
+  digitalWrite(LED_BUILTIN, LOW);
 }
 
 void setup() {
@@ -139,8 +148,8 @@ void setup() {
 }
 
 void loop() {
-    // delay(5000);//wait 5 seconds before going to sleep. In real senairio keep this as small as posible
-    // go_to_sleep();
-    sample_loop();
-    while(1);
+    delay(5000);//wait 5 seconds before going to sleep. In real senairio keep this as small as posible
+    go_to_sleep();
+    //sample_loop();
+//    wh/ile(1);
 }
