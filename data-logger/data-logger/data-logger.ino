@@ -17,7 +17,7 @@ void wakeup(){
 void go_to_sleep() {
     RTC.squareWave(SQWAVE_NONE);
     RTC.alarmInterrupt(ALARM_1, true);
-    
+
     time_t t = RTC.get();
 
     byte next_wakeup = (int(hour(t)/wakeup_interval_hours)+1)*wakeup_interval_hours % 24;
@@ -48,79 +48,79 @@ void sample_interrupt() {
 }
 
 void sample_loop() {
-  int sampling_duration = 3;
-  int analog_input[ANALOGINPUTS] = {8, 9, 10};
-  char temp_cstr[128];
-  bool led_value = false;
-  time_t t = RTC.get();
+    int sampling_duration = 3;
+    int analog_input[ANALOGINPUTS] = {8, 9, 10};
+    char temp_cstr[128];
+    bool led_value = false;
+    time_t t = RTC.get();
 
-  int elapsed_days = elapsedDays(t) - 18000;
-  sprintf(temp_cstr, "d%dh%d.csv", elapsed_days, hour(t));
-  String fname(temp_cstr);
-  Serial.println("Opening '" + fname + "'");
-  File datafile = SD.open(fname, FILE_WRITE);
+    int elapsed_days = elapsedDays(t) - 18000;
+    sprintf(temp_cstr, "d%dh%d.csv", elapsed_days, hour(t));
+    String fname(temp_cstr);
+    Serial.println("Opening '" + fname + "'");
+    File datafile = SD.open(fname, FILE_WRITE);
 
-  String header = "DATE";
-  for(int i = 0; i < ANALOGINPUTS; ++i) {
-    header += ", MU(A" + String(analog_input[i]) + "), STD(A" + String(analog_input[i]) + ")";
-  }
-  Serial.println(header);
-  datafile.println(header);
-  
-  for(int sampling_elapsed = 0; sampling_elapsed < sampling_duration; ++sampling_elapsed) {
-    int samples [ANALOGINPUTS][NSAMPLES] = {0};
-    int samples_taken = 0;
+    String header = "DATE";
+    for(int i = 0; i < ANALOGINPUTS; ++i) {
+        header += ", MU(A" + String(analog_input[i]) + "), STD(A" + String(analog_input[i]) + ")";
+    }
+    Serial.println(header);
+    datafile.println(header);
 
-    RTC.alarmInterrupt(ALARM_1, false);
-    attachInterrupt(0, sample_interrupt, FALLING);
-    RTC.squareWave(SQWAVE_1_HZ);
+    for(int sampling_elapsed = 0; sampling_elapsed < sampling_duration; ++sampling_elapsed) {
+        int samples [ANALOGINPUTS][NSAMPLES] = {0};
+        int samples_taken = 0;
 
-    while(samples_taken < NSAMPLES) {
-        if(time_to_sample) {
-            time_to_sample = false;
-            for(int i = 0; i < ANALOGINPUTS; ++i) {
-                samples[i][samples_taken] = analogRead(analog_input[i]);
+        RTC.alarmInterrupt(ALARM_1, false);
+        attachInterrupt(0, sample_interrupt, FALLING);
+        RTC.squareWave(SQWAVE_1_HZ);
+
+        while(samples_taken < NSAMPLES) {
+            if(time_to_sample) {
+                time_to_sample = false;
+                for(int i = 0; i < ANALOGINPUTS; ++i) {
+                    samples[i][samples_taken] = analogRead(analog_input[i]);
+                }
+                led_value = !led_value;
+                digitalWrite(LED_BUILTIN, led_value);
+                ++samples_taken;
             }
-            led_value = !led_value;
-            digitalWrite(LED_BUILTIN, led_value);
-            ++samples_taken;
+            delay(50);
         }
-        delay(50);
-    }
 
-    unsigned long sample_mean[ANALOGINPUTS] = {0};
-    for(int i = 0; i < ANALOGINPUTS; ++i) {
-      sample_mean[i] = 0;
-      for(int j = 0; j < NSAMPLES; ++j) {
-        sample_mean[i] += (unsigned long) samples[i][j];
-      }
-      sample_mean[i] /= (unsigned long)NSAMPLES;
+        unsigned long sample_mean[ANALOGINPUTS] = {0};
+        for(int i = 0; i < ANALOGINPUTS; ++i) {
+            sample_mean[i] = 0;
+            for(int j = 0; j < NSAMPLES; ++j) {
+                sample_mean[i] += (unsigned long) samples[i][j];
+            }
+            sample_mean[i] /= (unsigned long)NSAMPLES;
+        }
+        unsigned long sample_std[ANALOGINPUTS] = {0};
+        for(int i = 0; i < ANALOGINPUTS; ++i) {
+            sample_std[i] = 0;
+            for(int j = 0; j < NSAMPLES; ++j) {
+                sample_std[i] += ((unsigned long)samples[i][j]-sample_mean[i])*((unsigned long)samples[i][j]-sample_mean[i]);
+            }
+            sample_std[i] = sqrt(sample_std[i]/(unsigned long)NSAMPLES);
+        } 
+
+        t = RTC.get();
+        sprintf(temp_cstr, "%4d-%02d-%02dT%02d:%02d:%02d", year(t), month(t), day(t), hour(t), minute(t), second(t));
+        String str(temp_cstr);
+        for(int i = 0; i < ANALOGINPUTS; ++i) {
+            sprintf(temp_cstr, ", %4d", sample_mean[i]);
+            str += temp_cstr;
+            sprintf(temp_cstr, ", %4d", sample_std[i]);
+            str += temp_cstr;
+        }
+
+        Serial.println(str);
+        datafile.println(str);
     }
-    unsigned long sample_std[ANALOGINPUTS] = {0};
-    for(int i = 0; i < ANALOGINPUTS; ++i) {
-      sample_std[i] = 0;
-      for(int j = 0; j < NSAMPLES; ++j) {
-        sample_std[i] += ((unsigned long)samples[i][j]-sample_mean[i])*((unsigned long)samples[i][j]-sample_mean[i]);
-      }
-      sample_std[i] = sqrt(sample_std[i]/(unsigned long)NSAMPLES);
-    } 
-    
-    t = RTC.get();
-    sprintf(temp_cstr, "%4d-%02d-%02dT%02d:%02d:%02d", year(t), month(t), day(t), hour(t), minute(t), second(t));
-    String str(temp_cstr);
-    for(int i = 0; i < ANALOGINPUTS; ++i) {
-      sprintf(temp_cstr, ", %4d", sample_mean[i]);
-      str += temp_cstr;
-      sprintf(temp_cstr, ", %4d", sample_std[i]);
-      str += temp_cstr;
-    }
-    
-    Serial.println(str);
-    datafile.println(str);
-  }
-  Serial.println("Closing '" + fname + "'");
-  datafile.close();
-  digitalWrite(LED_BUILTIN, LOW);
+    Serial.println("Closing '" + fname + "'");
+    datafile.close();
+    digitalWrite(LED_BUILTIN, LOW);
 }
 
 void setup() {
@@ -151,5 +151,5 @@ void loop() {
     delay(5000);//wait 5 seconds before going to sleep. In real senairio keep this as small as posible
     go_to_sleep();
     //sample_loop();
-//    wh/ile(1);
+//    while(1);
 }
