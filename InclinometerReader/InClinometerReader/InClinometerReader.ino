@@ -180,7 +180,10 @@ void nudge_ms(unsigned long duration_ms, int high_value=255) {
 }
 
 void set_zenith(float target_zenith) {
-  float nudge_mode_tol = 10; // [deg]
+  float nudge_mode_tol = 5; // [deg]
+
+  unsigned long timeout = 5*60*1000;
+  unsigned long start_time = millis();
 
   Serial.println("Setting zenith to " + String(target_zenith) + " [deg]");
   Serial.println("Current zenith is " + String(get_zenith()) + " [deg]");
@@ -193,26 +196,30 @@ void set_zenith(float target_zenith) {
     post_too_low = get_zenith() < target_zenith;
     if(post_too_low) {
       set_direction_increase_zenith();
-      set_pwm(255);
     } else {
       set_direction_decrease_zenith();
-      set_pwm(255);
     }
 
     if(abs(get_zenith() - target_zenith) < nudge_mode_tol) {
       break;
     } else if (pre_too_low != post_too_low) {
       break;
+    } else if (millis() - start_time > timeout) {
+      break;
     }
+
+    set_pwm(255);
 
     delay(20);
   }
+
+  set_pwm(0);
 
   
   Serial.println("Switching to nudge mode");
   Serial.println("Current zenith is " + String(get_zenith()) + " [deg]");
 
-  int nudge_duration = 1024;
+  int nudge_duration = 512;
   
   while(nudge_duration > 0) {
     pre_too_low = get_zenith() < target_zenith;
@@ -223,15 +230,20 @@ void set_zenith(float target_zenith) {
     }
 
     nudge_ms(nudge_duration);
-    delay(500);
+    delay(1000);
 
     post_too_low = get_zenith() < target_zenith;
     if(pre_too_low != post_too_low) {
       nudge_duration /= 2;
     }
-    Serial.println("Finished setting the position");
-    Serial.println("Current: " + String(get_zenith()) + " | Target: " + String(target_zenith) + " [deg]");
+
+    if(millis() - start_time > timeout) {
+      nudge_duration = 0;
+    }
   }
+  Serial.println("Finished setting the position (elapsed time: " + String((float)(millis() - start_time)/1000.0) + " [sec])");
+  Serial.println("Current: " + String(get_zenith()) + " | Target: " + String(target_zenith) + " [deg]");
+    
 }
 
 void setup() {
@@ -263,27 +275,13 @@ void setup() {
 }
 
 void loop() {
-    //delay(5000);//wait 5 seconds before going to sleep. In real senairio keep this as small as posible
-    //go_to_sleep();
-    //sample_loop();
-    //while(1);
     set_inclinometer_relay(HIGH);
     delay(1000);
-    set_zenith(65);
+    set_zenith(41.7);
     while(1);
-//    delay(1000);
-//
-//    set_direction_decrease_zenith();
-//    Serial.println("Going up");
-//    delay(500);
-////    nudge_ms(1000);
-//    read_zenith();
-////    set_direction_decrease_zenith();
-//    Serial.println("Going down");
-//    delay(500);
-////    nudge_ms(1000);
-//    read_zenith();
-//    Serial.println("Zenith: " + String(get_zenith()) + " [deg]");
-//    delay(1000);
-    
+//  unsigned long foo1 = 0xFFFFFFFF;
+//  unsigned long foo2 = 0x00000009;
+//  Serial.println("Max value= " + String(foo1));
+//  Serial.println("diff= " + String(foo2-foo1));
+//  while(1);
 }
