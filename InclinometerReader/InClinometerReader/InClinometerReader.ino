@@ -6,7 +6,43 @@
 #include <SPI.h>
 #include <SD.h>
 
+static const int TEMP_5V_PIN = 1;
+static const int TEMP_SENS_PIN = 2;
+float get_temperature() {
+  digitalWrite(TEMP_5V_PIN, HIGH);
+  delay(500);
+  float reading = analogRead(TEMP_SENS_PIN) * 5.0 / 1024.0;
+  reading = (reading-0.424)/0.00625;
+  Serial.println("Temperature reading is " + String(reading) + " [deg C]");
+  digitalWrite(TEMP_5V_PIN, LOW);
+  return reading;
+}
 
+static const int HEATER_RELAY = 10;
+void turn_heaters_on() {
+  digitalWrite(HEATER_RELAY, HIGH);
+}
+void turn_heaters_off() {
+  digitalWrite(HEATER_RELAY, LOW);
+}
+
+void warmup_actuator(float min_temp=-20, float max_temp=20) {
+  float temp = get_temperature();
+  Serial.println("Current temperature is " + String(temp) + " [deg C]");
+  if(temp < min_temp && temp > -50) {
+    Serial.println("Turning heaters on");
+    turn_heaters_on();
+    for(int i = 0; i < 45 && temp < max_temp; ++i) {
+      delay(60000); // 60 seconds
+      temp = get_temperature();
+      Serial.println("Current temperature is " + String(temp) + " [deg C]");
+    }
+    Serial.println("Turning heaters off");
+    turn_heaters_off();
+  } else {
+    Serial.println("It is warm enough that the heaters don't need to be turned on");
+  }
+}
 
 void wakeup(){
     sleep_disable();
@@ -187,6 +223,8 @@ static void set_zenith(float target_zenith) {
   unsigned long timeout = 15*60*1000;
   unsigned long start_time = millis();
 
+  warmup_actuator();
+
   Serial.println("Setting zenith to " + String(target_zenith) + " [deg]");
   Serial.println("Current zenith is " + String(get_zenith()) + " [deg]");
   Serial.println("Moving at full speed until within " + String(nudge_mode_tol) + " [deg]");
@@ -354,6 +392,8 @@ void setup() {
     pinMode(INA, OUTPUT);
     pinMode(INB, OUTPUT);
     pinMode(PWM, OUTPUT);
+    pinMode(HEATER_RELAY, OUTPUT);
+    pinMode(TEMP_5V_PIN, OUTPUT);
     pinMode(interruptPin, INPUT_PULLUP);
     digitalWrite(LED_BUILTIN,HIGH);
 
@@ -366,6 +406,8 @@ void setup() {
     RTC.alarmInterrupt(ALARM_2, false);
     RTC.squareWave(SQWAVE_NONE);
     RTC.alarmInterrupt(ALARM_1, true);
+
+    turn_heaters_off();
 
 //    RTC.set(compileTime()); // Don't leave uncommented
 
@@ -380,10 +422,11 @@ void setup() {
     sprintf(temp_cstr, "%02d:%02d", hour(t), minute(t));
     Serial.println("Powered on at " + String(temp_cstr));
     
-    set_inclinometer_relay(HIGH);
-    delay(5000);
-    Serial.println("Resetting position to 60 [deg]...");
-    set_zenith(60.0);
+    while(1) get_temperature();
+//    set_inclinometer_relay(HIGH);
+//    delay(5000);
+//    Serial.println("Resetting position to 60 [deg]...");
+//    set_zenith(60.0);
 }
 
 void loop() {
