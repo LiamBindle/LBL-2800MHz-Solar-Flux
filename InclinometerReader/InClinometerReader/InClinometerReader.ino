@@ -428,6 +428,7 @@ void setup() {
     delay(5000);
     Serial.println("Resetting position to 60 [deg]...");
     set_zenith(60.0);
+    set_inclinometer_relay(LOW);
 }
 
 void loop() {
@@ -456,11 +457,7 @@ void loop() {
     set_zenith(tomorrows_min_zenith);
   }
 
-  go_to_sleep();
-
-//  Serial.println("Recording position and temperatures...");
-//  sample_loop(); // 90 B
   set_inclinometer_relay(LOW);
   delay(1000);
-  while(1);
+  go_to_sleep();
 }
