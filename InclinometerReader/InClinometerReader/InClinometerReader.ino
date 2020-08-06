@@ -26,7 +26,7 @@ void turn_heaters_off() {
   digitalWrite(HEATER_RELAY, LOW);
 }
 
-void warmup_actuator(float min_temp=-20, float max_temp=20) {
+inline void warmup_actuator(float min_temp=-20, float max_temp=20)  {
   float temp = get_temperature();
   Serial.println("Current temperature is " + String(temp) + " [deg C]");
   if(temp < min_temp && temp > -50) {
@@ -53,8 +53,8 @@ void go_to_sleep() {
     time_t t = RTC.get();
 
     Serial.println("Setting next wakeup at 15:00");
-    byte wake_hour = 12;
-    byte wake_minute = 45;
+    byte wake_hour = 15;
+    byte wake_minute = 58;
     RTC.setAlarm(ALM1_MATCH_HOURS, 0, wake_minute, wake_hour, 0);
     RTC.alarm(ALARM_1);
     RTC.squareWave(SQWAVE_NONE);
@@ -76,7 +76,7 @@ void go_to_sleep() {
 }
 
 #define NSAMPLES 15
-#define ANALOGINPUTS 3
+#define ANALOGINPUTS 2
 
 static const int INCLINOMETER_PIN = 0;
 
@@ -86,12 +86,15 @@ static void sample_interrupt() {
     time_to_sample = true;
 }
 
-static void sample_loop() {
+inline static void sample_loop() {
     int sampling_duration = 1;
-    int analog_input[ANALOGINPUTS] = {INCLINOMETER_PIN, 9, 10};
+    int analog_input[ANALOGINPUTS] = {INCLINOMETER_PIN, TEMP_SENS_PIN};
     char temp_cstr[32];
     bool led_value = false;
     time_t t = RTC.get();
+    
+    digitalWrite(TEMP_5V_PIN, HIGH);
+    delay(500);
 
     int elapsed_days = elapsedDays(t) - 18000;
     sprintf(temp_cstr, "d%dh%d.csv", elapsed_days, hour(t));
@@ -160,6 +163,7 @@ static void sample_loop() {
     Serial.println("Closing '" + fname + "'");
     datafile.close();
     digitalWrite(LED_BUILTIN, LOW);
+    digitalWrite(TEMP_5V_PIN, LOW);
 }
 
 static const int INCLINOMETER_RELAY_PIN = 4;
@@ -223,7 +227,7 @@ static void set_zenith(float target_zenith) {
   unsigned long timeout = 15*60*1000;
   unsigned long start_time = millis();
 
-  warmup_actuator();
+//  warmup_actuator();
 
   Serial.println("Setting zenith to " + String(target_zenith) + " [deg]");
   Serial.println("Current zenith is " + String(get_zenith()) + " [deg]");
@@ -411,22 +415,21 @@ void setup() {
 
 //    RTC.set(compileTime()); // Don't leave uncommented
 
-//    int CS=9;
-//    if(!SD.begin(CS)) {
-//      Serial.println("Failed to initialize SD card");
-//      while(1);
-//    }
+    int CS=9;
+    if(!SD.begin(CS)) {
+      Serial.println("Failed to initialize SD card");
+      while(1);
+    }
 
     time_t t = RTC.get();
     char temp_cstr[6];
     sprintf(temp_cstr, "%02d:%02d", hour(t), minute(t));
     Serial.println("Powered on at " + String(temp_cstr));
     
-    while(1) get_temperature();
-//    set_inclinometer_relay(HIGH);
-//    delay(5000);
-//    Serial.println("Resetting position to 60 [deg]...");
-//    set_zenith(60.0);
+    set_inclinometer_relay(HIGH);
+    delay(5000);
+    Serial.println("Resetting position to 60 [deg]...");
+    set_zenith(60.0);
 }
 
 void loop() {
