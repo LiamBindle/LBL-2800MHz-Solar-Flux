@@ -76,7 +76,7 @@ void go_to_sleep() {
 }
 
 #define NSAMPLES 15
-#define ANALOGINPUTS 2
+#define ANALOGINPUTS 3
 
 static const int INCLINOMETER_PIN = 0;
 
@@ -86,15 +86,12 @@ static void sample_interrupt() {
     time_to_sample = true;
 }
 
-inline static void sample_loop() {
+static void sample_loop() {
     int sampling_duration = 1;
-    int analog_input[ANALOGINPUTS] = {INCLINOMETER_PIN, TEMP_SENS_PIN};
+    int analog_input[ANALOGINPUTS] = {INCLINOMETER_PIN, 9, 10};
     char temp_cstr[32];
     bool led_value = false;
     time_t t = RTC.get();
-    
-    digitalWrite(TEMP_5V_PIN, HIGH);
-    delay(500);
 
     int elapsed_days = elapsedDays(t) - 18000;
     sprintf(temp_cstr, "d%dh%d.csv", elapsed_days, hour(t));
@@ -163,7 +160,6 @@ inline static void sample_loop() {
     Serial.println("Closing '" + fname + "'");
     datafile.close();
     digitalWrite(LED_BUILTIN, LOW);
-    digitalWrite(TEMP_5V_PIN, LOW);
 }
 
 static const int INCLINOMETER_RELAY_PIN = 4;
@@ -415,11 +411,11 @@ void setup() {
 
 //    RTC.set(compileTime()); // Don't leave uncommented
 
-    int CS=9;
-    if(!SD.begin(CS)) {
-      Serial.println("Failed to initialize SD card");
-      while(1);
-    }
+//    int CS=9;
+//    if(!SD.begin(CS)) {
+//      Serial.println("Failed to initialize SD card");
+//      while(1);
+//    }
 
     time_t t = RTC.get();
     char temp_cstr[6];
