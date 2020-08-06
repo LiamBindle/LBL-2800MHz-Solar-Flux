@@ -8,20 +8,23 @@
 
 
 
-static void wakeup(){
+void wakeup(){
     sleep_disable();
     detachInterrupt(0);
 }
 
-static void go_to_sleep() {
-    RTC.squareWave(SQWAVE_NONE);
-    RTC.alarmInterrupt(ALARM_1, true);
-
+void go_to_sleep() {
     time_t t = RTC.get();
 
     Serial.println("Setting next wakeup at 15:00");
-    RTC.setAlarm(ALM1_MATCH_HOURS, 0, 0, 15, 0);
+    byte wake_hour = 12;
+    byte wake_minute = 45;
+    RTC.setAlarm(ALM1_MATCH_HOURS, 0, wake_minute, wake_hour, 0);
     RTC.alarm(ALARM_1);
+    RTC.squareWave(SQWAVE_NONE);
+    RTC.alarmInterrupt(ALARM_1, true);
+
+    delay(1000);
 
     sleep_enable();
     attachInterrupt(0, wakeup, LOW);
@@ -36,7 +39,7 @@ static void go_to_sleep() {
     Serial.println("Woke up at " + String(hour(t)) + ":" + String(minute(t)));
 }
 
-#define NSAMPLES 30
+#define NSAMPLES 15
 #define ANALOGINPUTS 3
 
 static const int INCLINOMETER_PIN = 0;
@@ -50,7 +53,7 @@ static void sample_interrupt() {
 static void sample_loop() {
     int sampling_duration = 1;
     int analog_input[ANALOGINPUTS] = {INCLINOMETER_PIN, 9, 10};
-    char temp_cstr[128];
+    char temp_cstr[32];
     bool led_value = false;
     time_t t = RTC.get();
 
@@ -88,7 +91,7 @@ static void sample_loop() {
             delay(50);
         }
 
-        unsigned long sample_mean[ANALOGINPUTS] = {0};
+        unsigned int sample_mean[ANALOGINPUTS] = {0};
         for(int i = 0; i < ANALOGINPUTS; ++i) {
             sample_mean[i] = 0;
             for(int j = 0; j < NSAMPLES; ++j) {
@@ -96,7 +99,7 @@ static void sample_loop() {
             }
             sample_mean[i] /= (unsigned long)NSAMPLES;
         }
-        unsigned long sample_std[ANALOGINPUTS] = {0};
+        unsigned int sample_std[ANALOGINPUTS] = {0};
         for(int i = 0; i < ANALOGINPUTS; ++i) {
             sample_std[i] = 0;
             for(int j = 0; j < NSAMPLES; ++j) {
@@ -245,18 +248,18 @@ static void set_zenith(float target_zenith) {
     
 }
 
-static double calc_zenith(double latitude, double longitude, double timezone, long year, long month, long day, long hour, long minute, long second) {
+static double calc_zenith(double latitude, double longitude, double timezone, long y, long m, long d, long h, long t_min, long t_sec) {
     const double DEG2RAD=M_PI/180.0;
     const double RAD2DEG=180.0/M_PI;
 
-    if(month == 1 || month == 2) {
-        year -= 1;
-        month += 12;
+    if(m == 1 || m == 2) {
+        y -= 1;
+        m += 12;
     }
-    long A = year/100;
+    long A = y/100;
     double B = 2.0 - A + (long)(A/4);
-    double time_past_midnight = ((double)hour + (double)minute/60.0 +(double)(second)/3600)/24.0;
-    double jul_day = (long)(365.25*(year+4716))+(long)(30.6001*(month+1))+day+B-1524.5-timezone/24.0 + time_past_midnight;
+    double time_past_midnight = ((double)h + (double)t_min/60.0 +(double)(t_sec)/3600)/24.0;
+    double jul_day = (long)(365.25*(y+4716))+(long)(30.6001*(m+1))+d+B-1524.5-timezone/24.0 + time_past_midnight;
     double jul_century = (jul_day-2451545.0)/36525.0;
 
     double geo_mean_long_sun = fmod(280.46646+jul_century*(36000.76983+jul_century*0.0003032), 360.0)*DEG2RAD;
@@ -299,7 +302,7 @@ static double calc_tomorrows_min_zenith() {
     int tomorrow_month = month(t);
     int tomorrow_day = day(t);
 
-    char temp_cstr[128];
+    char temp_cstr[16];
 
     float min_zenith=90;
     int min_zenith_hour = 0;
@@ -319,6 +322,28 @@ static double calc_tomorrows_min_zenith() {
     Serial.println("Tomorrows minimum zenith is " + String(min_zenith) + " [deg] at " + String(temp_cstr));
     
     return min_zenith;
+}
+
+time_t compileTime()
+{
+    const time_t FUDGE(10);    //fudge factor to allow for upload time, etc. (seconds, YMMV)
+    const char *compDate = __DATE__, *compTime = __TIME__, *months = "JanFebMarAprMayJunJulAugSepOctNovDec";
+    char compMon[4], *m;
+
+    strncpy(compMon, compDate, 3);
+    compMon[3] = '\0';
+    m = strstr(months, compMon);
+
+    tmElements_t tm;
+    tm.Month = ((m - months) / 3 + 1);
+    tm.Day = atoi(compDate + 4);
+    tm.Year = atoi(compDate + 7) - 1970;
+    tm.Hour = atoi(compTime);
+    tm.Minute = atoi(compTime + 3);
+    tm.Second = atoi(compTime + 6);
+
+    time_t t = makeTime(tm);
+    return t + FUDGE;        //add fudge factor to allow for compile time
 }
 
 void setup() {
@@ -342,30 +367,34 @@ void setup() {
     RTC.squareWave(SQWAVE_NONE);
     RTC.alarmInterrupt(ALARM_1, true);
 
-    {
-      char temp_cstr[128] = {0};
-      time_t t = RTC.get();
-      sprintf(temp_cstr, "Powered on at %4d-%02d-%02dT%02d:%02d:%02d", year(t), month(t), day(t), hour(t), minute(t), second(t));
-      Serial.println("Powered on at");
-    }
+//    RTC.set(compileTime()); // Don't leave uncommented
 
 //    int CS=9;
 //    if(!SD.begin(CS)) {
 //      Serial.println("Failed to initialize SD card");
 //      while(1);
 //    }
-  
-  set_inclinometer_relay(HIGH);
-  delay(5000);
-  Serial.println("Resetting position...");
-  set_zenith(60.0);
+
+    time_t t = RTC.get();
+    char temp_cstr[6];
+    sprintf(temp_cstr, "%02d:%02d", hour(t), minute(t));
+    Serial.println("Powered on at " + String(temp_cstr));
+    
+    set_inclinometer_relay(HIGH);
+    delay(5000);
+    Serial.println("Resetting position to 60 [deg]...");
+    set_zenith(60.0);
 }
 
 void loop() {
   float abs_min_zenith = 34.9;
   float abs_max_zenith = 79.6;
+
+  go_to_sleep();
   
-  float tomorrows_min_zenith = calc_tomorrows_min_zenith();
+  
+  float tomorrows_min_zenith = calc_tomorrows_min_zenith(); // 80 B
+  set_inclinometer_relay(HIGH);
   delay(5000);
   Serial.println("Reading current position...");
   float current_zenith = 0;
@@ -387,7 +416,7 @@ void loop() {
   }
 
   Serial.println("Recording position and temperatures...");
-  sample_loop();
+//  sample_loop(); // 90 B
   set_inclinometer_relay(LOW);
   delay(1000);
   while(1);
