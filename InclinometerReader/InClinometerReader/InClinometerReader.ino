@@ -7,22 +7,20 @@
 #include <SD.h>
 
 
-const int wakeup_interval_hours = 6;
 
-void wakeup(){
+static void wakeup(){
     sleep_disable();
     detachInterrupt(0);
 }
 
-void go_to_sleep() {
+static void go_to_sleep() {
     RTC.squareWave(SQWAVE_NONE);
     RTC.alarmInterrupt(ALARM_1, true);
 
     time_t t = RTC.get();
 
-    byte next_wakeup = (int(hour(t)/wakeup_interval_hours)+1)*wakeup_interval_hours % 24;
-    Serial.println("Setting next wakeup at " + String(next_wakeup) + ":00");
-    RTC.setAlarm(ALM1_MATCH_HOURS, 0, 0, next_wakeup, 0);
+    Serial.println("Setting next wakeup at 15:00");
+    RTC.setAlarm(ALM1_MATCH_HOURS, 0, 0, 15, 0);
     RTC.alarm(ALARM_1);
 
     sleep_enable();
@@ -38,18 +36,20 @@ void go_to_sleep() {
     Serial.println("Woke up at " + String(hour(t)) + ":" + String(minute(t)));
 }
 
-#define NSAMPLES 5
+#define NSAMPLES 30
 #define ANALOGINPUTS 3
+
+static const int INCLINOMETER_PIN = 0;
 
 volatile bool time_to_sample = false;
 
-void sample_interrupt() {
+static void sample_interrupt() {
     time_to_sample = true;
 }
 
-void sample_loop() {
-    int sampling_duration = 3;
-    int analog_input[ANALOGINPUTS] = {8, 9, 10};
+static void sample_loop() {
+    int sampling_duration = 1;
+    int analog_input[ANALOGINPUTS] = {INCLINOMETER_PIN, 9, 10};
     char temp_cstr[128];
     bool led_value = false;
     time_t t = RTC.get();
@@ -123,14 +123,13 @@ void sample_loop() {
     digitalWrite(LED_BUILTIN, LOW);
 }
 
-const int INCLINOMETER_PIN = 0;
-const int INCLINOMETER_RELAY_PIN = 4;
+static const int INCLINOMETER_RELAY_PIN = 4;
 
-void set_inclinometer_relay(bool value) {
+static void set_inclinometer_relay(bool value) {
   digitalWrite(INCLINOMETER_RELAY_PIN, value);
 }
 
-float get_zenith() {
+static float get_zenith() {
   // accuracy is += 0.5
   float reading;
 
@@ -155,34 +154,34 @@ static const int INA = 6;
 static const int INB = 7;
 static const int PWM = 5;
 
-void set_direction_increase_zenith() {
+static void set_direction_increase_zenith() {
   digitalWrite(INA, HIGH);
   digitalWrite(INB, LOW);
 }
-void set_direction_decrease_zenith() {
+static void set_direction_decrease_zenith() {
   digitalWrite(INA, LOW);
   digitalWrite(INB, HIGH);
 }
-void stop_movement() {
+static void stop_movement() {
   digitalWrite(INA, LOW);
   digitalWrite(INB, LOW);
   analogWrite(PWM, 0);
 }
 
-void set_pwm(int duty_cycle) {
+static void set_pwm(int duty_cycle) {
   analogWrite(PWM, duty_cycle);
 }
 
-void nudge_ms(unsigned long duration_ms, int high_value=255) {
+static void nudge_ms(unsigned long duration_ms, int high_value=255) {
   analogWrite(PWM, high_value);
   delay(duration_ms);
   analogWrite(PWM, 0);
 }
 
-void set_zenith(float target_zenith) {
-  float nudge_mode_tol = 5; // [deg]
+static void set_zenith(float target_zenith) {
+  float nudge_mode_tol = 10; // [deg]
 
-  unsigned long timeout = 5*60*1000;
+  unsigned long timeout = 15*60*1000;
   unsigned long start_time = millis();
 
   Serial.println("Setting zenith to " + String(target_zenith) + " [deg]");
@@ -219,7 +218,7 @@ void set_zenith(float target_zenith) {
   Serial.println("Switching to nudge mode");
   Serial.println("Current zenith is " + String(get_zenith()) + " [deg]");
 
-  int nudge_duration = 512;
+  int nudge_duration = 1024;
   
   while(nudge_duration > 0) {
     pre_too_low = get_zenith() < target_zenith;
@@ -246,6 +245,82 @@ void set_zenith(float target_zenith) {
     
 }
 
+static double calc_zenith(double latitude, double longitude, double timezone, long year, long month, long day, long hour, long minute, long second) {
+    const double DEG2RAD=M_PI/180.0;
+    const double RAD2DEG=180.0/M_PI;
+
+    if(month == 1 || month == 2) {
+        year -= 1;
+        month += 12;
+    }
+    long A = year/100;
+    double B = 2.0 - A + (long)(A/4);
+    double time_past_midnight = ((double)hour + (double)minute/60.0 +(double)(second)/3600)/24.0;
+    double jul_day = (long)(365.25*(year+4716))+(long)(30.6001*(month+1))+day+B-1524.5-timezone/24.0 + time_past_midnight;
+    double jul_century = (jul_day-2451545.0)/36525.0;
+
+    double geo_mean_long_sun = fmod(280.46646+jul_century*(36000.76983+jul_century*0.0003032), 360.0)*DEG2RAD;
+    double geo_mean_anom_sun = (357.52911+jul_century*(35999.05029-0.0001537*jul_century))*DEG2RAD;
+    double ecc_earth_orbit = 0.016708634-jul_century*(0.000042037+0.0000001267*jul_century);
+
+    double mean_obliq_ecl = 23.0+(26.0+((21.448-jul_century*(46.815+jul_century*(0.00059-jul_century*0.001813))))/60.0)/60.0;
+    double obliq_corr = mean_obliq_ecl+0.00256*cos(DEG2RAD*(125.04-1934.136*jul_century));
+    double vary = tan(DEG2RAD * obliq_corr/2.0)*tan(DEG2RAD * obliq_corr/2.0);
+
+    double sun_eqn_center = sin(geo_mean_anom_sun)*(1.914602-jul_century*(0.004817+0.000014*jul_century))+sin(2*geo_mean_anom_sun)*(0.019993-0.000101*jul_century)+sin(3*geo_mean_anom_sun)*0.000289;
+    double sun_true_long = geo_mean_long_sun*RAD2DEG+sun_eqn_center;
+    double sun_app_long = sun_true_long-0.00569-0.00478*sin(DEG2RAD*(125.04-1934.136*jul_century));
+    double sun_declin = asin(sin(DEG2RAD*obliq_corr)*sin(DEG2RAD*sun_app_long));
+
+    double eqn_of_time = (vary*sin(2*geo_mean_long_sun)-2*ecc_earth_orbit*sin(geo_mean_anom_sun)+4*ecc_earth_orbit*vary*sin(geo_mean_anom_sun)*cos(2*geo_mean_long_sun)-0.5*vary*vary*sin(4*geo_mean_long_sun)-1.25*ecc_earth_orbit*ecc_earth_orbit*sin(2*geo_mean_anom_sun))*RAD2DEG*4;
+    double true_solar_time = fmod(time_past_midnight*1440.0+eqn_of_time+4.0*longitude-60.0*timezone, 1440.0);
+
+    double hour_angle;
+    if(true_solar_time/4.0 < 0) {
+        hour_angle = true_solar_time/4.0+180.0;
+    } else {
+        hour_angle = true_solar_time/4.0-180.0;
+    }
+
+    double solar_zenith_angle = acos(sin(DEG2RAD*latitude)*sin(sun_declin)+cos(DEG2RAD*latitude)*cos(sun_declin)*cos(DEG2RAD*hour_angle))*RAD2DEG;
+    return solar_zenith_angle;
+
+}
+
+#define NZENITHCALCS 180
+static double calc_tomorrows_min_zenith() {
+    Serial.println("Calculating tomorrows minimum zenith...");
+    time_t t = nextMidnight(RTC.get());
+    double latitude = 54;
+    double longitude = -104.5;
+    double timezone=-6;
+
+    int tomorrow_year = year(t);
+    int tomorrow_month = month(t);
+    int tomorrow_day = day(t);
+
+    char temp_cstr[128];
+
+    float min_zenith=90;
+    int min_zenith_hour = 0;
+    int min_zenith_minute = 0;
+    for(int i = 0; i < NZENITHCALCS; ++i) {
+      int i_hour = i/60 + 11;
+      int i_minute = i%60;
+      double i_zenith = calc_zenith(latitude, longitude, timezone, tomorrow_year, tomorrow_month, tomorrow_day, i_hour, i_minute, 0);
+      if(i_zenith < min_zenith) {
+        min_zenith=i_zenith;
+        min_zenith_hour = i_hour;
+        min_zenith_minute = i_minute;
+      }
+    }
+
+    sprintf(temp_cstr, "%02d:%02d", min_zenith_hour, min_zenith_minute);
+    Serial.println("Tomorrows minimum zenith is " + String(min_zenith) + " [deg] at " + String(temp_cstr));
+    
+    return min_zenith;
+}
+
 void setup() {
     Serial.begin(9600);
     while(!Serial);
@@ -267,21 +342,53 @@ void setup() {
     RTC.squareWave(SQWAVE_NONE);
     RTC.alarmInterrupt(ALARM_1, true);
 
-//    int CS=53;
+    {
+      char temp_cstr[128] = {0};
+      time_t t = RTC.get();
+      sprintf(temp_cstr, "Powered on at %4d-%02d-%02dT%02d:%02d:%02d", year(t), month(t), day(t), hour(t), minute(t), second(t));
+      Serial.println("Powered on at");
+    }
+
+//    int CS=9;
 //    if(!SD.begin(CS)) {
 //      Serial.println("Failed to initialize SD card");
 //      while(1);
 //    }
+  
+  set_inclinometer_relay(HIGH);
+  delay(5000);
+  Serial.println("Resetting position...");
+  set_zenith(60.0);
 }
 
 void loop() {
-    set_inclinometer_relay(HIGH);
-    delay(1000);
-    set_zenith(41.7);
-    while(1);
-//  unsigned long foo1 = 0xFFFFFFFF;
-//  unsigned long foo2 = 0x00000009;
-//  Serial.println("Max value= " + String(foo1));
-//  Serial.println("diff= " + String(foo2-foo1));
-//  while(1);
+  float abs_min_zenith = 34.9;
+  float abs_max_zenith = 79.6;
+  
+  float tomorrows_min_zenith = calc_tomorrows_min_zenith();
+  delay(5000);
+  Serial.println("Reading current position...");
+  float current_zenith = 0;
+  const int nsamples = 30;
+  for(int i = 0; i < nsamples; ++i) {
+    current_zenith += get_zenith();
+  }
+  current_zenith /= (float)nsamples;
+  Serial.println("Current position is " + String(current_zenith) + " [deg]");
+  if(abs(current_zenith - tomorrows_min_zenith) > 0.5) {
+    if(tomorrows_min_zenith < abs_min_zenith) {
+      tomorrows_min_zenith = abs_min_zenith;
+    }
+    if(tomorrows_min_zenith > abs_max_zenith) {
+      tomorrows_min_zenith = abs_max_zenith;
+    }
+    Serial.println("Difference is greater than 0.5 [deg]. Moving to new position.");
+    set_zenith(tomorrows_min_zenith);
+  }
+
+  Serial.println("Recording position and temperatures...");
+  sample_loop();
+  set_inclinometer_relay(LOW);
+  delay(1000);
+  while(1);
 }
