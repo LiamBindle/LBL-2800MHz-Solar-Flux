@@ -3,8 +3,8 @@
 #define interruptPin 2 //Pin we are going to use to wake up the Arduino
 #include <DS3232RTC.h>  //RTC Library https://github.com/JChristensen/DS3232RTC
 
-#include <SPI.h>
-#include <SD.h>
+//#include <SPI.h>
+//#include <SD.h>
 
 static const int TEMP_5V_PIN = 1;
 static const int TEMP_SENS_PIN = 2;
@@ -26,13 +26,13 @@ void turn_heaters_off() {
   digitalWrite(HEATER_RELAY, LOW);
 }
 
-inline void warmup_actuator(float min_temp=-20, float max_temp=20)  {
+inline void warmup_actuator()  {
   float temp = get_temperature();
   Serial.println("Current temperature is " + String(temp) + " [deg C]");
-  if(temp < min_temp && temp > -50) {
+  if(temp < -20 && temp > -50) {
     Serial.println("Turning heaters on");
     turn_heaters_on();
-    for(int i = 0; i < 45 && temp < max_temp; ++i) {
+    for(int i = 0; i < 45 && temp < 20; ++i) {
       delay(60000); // 60 seconds
       temp = get_temperature();
       Serial.println("Current temperature is " + String(temp) + " [deg C]");
@@ -86,81 +86,81 @@ static void sample_interrupt() {
     time_to_sample = true;
 }
 
-static void sample_loop() {
-    int sampling_duration = 1;
-    int analog_input[ANALOGINPUTS] = {INCLINOMETER_PIN, 9, 10};
-    char temp_cstr[32];
-    bool led_value = false;
-    time_t t = RTC.get();
-
-    int elapsed_days = elapsedDays(t) - 18000;
-    sprintf(temp_cstr, "d%dh%d.csv", elapsed_days, hour(t));
-    String fname(temp_cstr);
-    Serial.println("Opening '" + fname + "'");
-    File datafile = SD.open(fname, FILE_WRITE);
-
-    String header = "DATE";
-    for(int i = 0; i < ANALOGINPUTS; ++i) {
-        header += ", MU(A" + String(analog_input[i]) + "), STD(A" + String(analog_input[i]) + ")";
-    }
-    Serial.println(header);
-    datafile.println(header);
-
-    for(int sampling_elapsed = 0; sampling_elapsed < sampling_duration; ++sampling_elapsed) {
-        int samples [ANALOGINPUTS][NSAMPLES] = {0};
-        int samples_taken = 0;
-
-        RTC.alarmInterrupt(ALARM_1, false);
-        attachInterrupt(0, sample_interrupt, FALLING);
-        RTC.squareWave(SQWAVE_1_HZ);
-
-        while(samples_taken < NSAMPLES) {
-            if(time_to_sample) {
-                time_to_sample = false;
-                for(int i = 0; i < ANALOGINPUTS; ++i) {
-                    samples[i][samples_taken] = analogRead(analog_input[i]);
-                }
-                led_value = !led_value;
-                digitalWrite(LED_BUILTIN, led_value);
-                ++samples_taken;
-            }
-            delay(50);
-        }
-
-        unsigned int sample_mean[ANALOGINPUTS] = {0};
-        for(int i = 0; i < ANALOGINPUTS; ++i) {
-            sample_mean[i] = 0;
-            for(int j = 0; j < NSAMPLES; ++j) {
-                sample_mean[i] += (unsigned long) samples[i][j];
-            }
-            sample_mean[i] /= (unsigned long)NSAMPLES;
-        }
-        unsigned int sample_std[ANALOGINPUTS] = {0};
-        for(int i = 0; i < ANALOGINPUTS; ++i) {
-            sample_std[i] = 0;
-            for(int j = 0; j < NSAMPLES; ++j) {
-                sample_std[i] += ((unsigned long)samples[i][j]-sample_mean[i])*((unsigned long)samples[i][j]-sample_mean[i]);
-            }
-            sample_std[i] = sqrt(sample_std[i]/(unsigned long)NSAMPLES);
-        } 
-
-        t = RTC.get();
-        sprintf(temp_cstr, "%4d-%02d-%02dT%02d:%02d:%02d", year(t), month(t), day(t), hour(t), minute(t), second(t));
-        String str(temp_cstr);
-        for(int i = 0; i < ANALOGINPUTS; ++i) {
-            sprintf(temp_cstr, ", %4d", sample_mean[i]);
-            str += temp_cstr;
-            sprintf(temp_cstr, ", %4d", sample_std[i]);
-            str += temp_cstr;
-        }
-
-        Serial.println(str);
-        datafile.println(str);
-    }
-    Serial.println("Closing '" + fname + "'");
-    datafile.close();
-    digitalWrite(LED_BUILTIN, LOW);
-}
+//static void sample_loop() {
+//    int sampling_duration = 1;
+//    int analog_input[ANALOGINPUTS] = {INCLINOMETER_PIN, 9, 10};
+//    char temp_cstr[32];
+//    bool led_value = false;
+//    time_t t = RTC.get();
+//
+//    int elapsed_days = elapsedDays(t) - 18000;
+//    sprintf(temp_cstr, "d%dh%d.csv", elapsed_days, hour(t));
+//    String fname(temp_cstr);
+//    Serial.println("Opening '" + fname + "'");
+//    File datafile = SD.open(fname, FILE_WRITE);
+//
+//    String header = "DATE";
+//    for(int i = 0; i < ANALOGINPUTS; ++i) {
+//        header += ", MU(A" + String(analog_input[i]) + "), STD(A" + String(analog_input[i]) + ")";
+//    }
+//    Serial.println(header);
+//    datafile.println(header);
+//
+//    for(int sampling_elapsed = 0; sampling_elapsed < sampling_duration; ++sampling_elapsed) {
+//        int samples [ANALOGINPUTS][NSAMPLES] = {0};
+//        int samples_taken = 0;
+//
+//        RTC.alarmInterrupt(ALARM_1, false);
+//        attachInterrupt(0, sample_interrupt, FALLING);
+//        RTC.squareWave(SQWAVE_1_HZ);
+//
+//        while(samples_taken < NSAMPLES) {
+//            if(time_to_sample) {
+//                time_to_sample = false;
+//                for(int i = 0; i < ANALOGINPUTS; ++i) {
+//                    samples[i][samples_taken] = analogRead(analog_input[i]);
+//                }
+//                led_value = !led_value;
+//                digitalWrite(LED_BUILTIN, led_value);
+//                ++samples_taken;
+//            }
+//            delay(50);
+//        }
+//
+//        unsigned int sample_mean[ANALOGINPUTS] = {0};
+//        for(int i = 0; i < ANALOGINPUTS; ++i) {
+//            sample_mean[i] = 0;
+//            for(int j = 0; j < NSAMPLES; ++j) {
+//                sample_mean[i] += (unsigned long) samples[i][j];
+//            }
+//            sample_mean[i] /= (unsigned long)NSAMPLES;
+//        }
+//        unsigned int sample_std[ANALOGINPUTS] = {0};
+//        for(int i = 0; i < ANALOGINPUTS; ++i) {
+//            sample_std[i] = 0;
+//            for(int j = 0; j < NSAMPLES; ++j) {
+//                sample_std[i] += ((unsigned long)samples[i][j]-sample_mean[i])*((unsigned long)samples[i][j]-sample_mean[i]);
+//            }
+//            sample_std[i] = sqrt(sample_std[i]/(unsigned long)NSAMPLES);
+//        } 
+//
+//        t = RTC.get();
+//        sprintf(temp_cstr, "%4d-%02d-%02dT%02d:%02d:%02d", year(t), month(t), day(t), hour(t), minute(t), second(t));
+//        String str(temp_cstr);
+//        for(int i = 0; i < ANALOGINPUTS; ++i) {
+//            sprintf(temp_cstr, ", %4d", sample_mean[i]);
+//            str += temp_cstr;
+//            sprintf(temp_cstr, ", %4d", sample_std[i]);
+//            str += temp_cstr;
+//        }
+//
+//        Serial.println(str);
+//        datafile.println(str);
+//    }
+//    Serial.println("Closing '" + fname + "'");
+//    datafile.close();
+//    digitalWrite(LED_BUILTIN, LOW);
+//}
 
 static const int INCLINOMETER_RELAY_PIN = 4;
 
@@ -223,7 +223,7 @@ static void set_zenith(float target_zenith) {
   unsigned long timeout = 15*60*1000;
   unsigned long start_time = millis();
 
-//  warmup_actuator();
+  warmup_actuator();
 
   Serial.println("Setting zenith to " + String(target_zenith) + " [deg]");
   Serial.println("Current zenith is " + String(get_zenith()) + " [deg]");
@@ -430,10 +430,7 @@ void setup() {
 
 void loop() {
   float abs_min_zenith = 34.9;
-  float abs_max_zenith = 79.6;
-
-  go_to_sleep();
-  
+  float abs_max_zenith = 79.6;  
   
   float tomorrows_min_zenith = calc_tomorrows_min_zenith(); // 80 B
   set_inclinometer_relay(HIGH);
@@ -457,7 +454,9 @@ void loop() {
     set_zenith(tomorrows_min_zenith);
   }
 
-  Serial.println("Recording position and temperatures...");
+  go_to_sleep();
+
+//  Serial.println("Recording position and temperatures...");
 //  sample_loop(); // 90 B
   set_inclinometer_relay(LOW);
   delay(1000);
