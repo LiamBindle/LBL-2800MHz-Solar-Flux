@@ -52,9 +52,11 @@ void wakeup(){
 void go_to_sleep() {
     time_t t = RTC.get();
 
-    Serial.println("Setting next wakeup at 15:00");
     byte wake_hour = 15;
-    byte wake_minute = 58;
+    byte wake_minute = 30;
+    char temp_cstr[8];
+    sprintf(temp_cstr, "%02d:%02d", wake_hour, wake_minute);
+    Serial.println("Setting next wakeup at " + String(temp_cstr));
     RTC.setAlarm(ALM1_MATCH_HOURS, 0, wake_minute, wake_hour, 0);
     RTC.alarm(ALARM_1);
     RTC.squareWave(SQWAVE_NONE);
@@ -261,7 +263,7 @@ static void set_zenith(float target_zenith) {
 
   int nudge_duration = 1024;
   
-  while(nudge_duration > 0) {
+  while(nudge_duration > 16) {
     pre_too_low = get_zenith() < target_zenith;
     if(pre_too_low) {
       set_direction_increase_zenith();
