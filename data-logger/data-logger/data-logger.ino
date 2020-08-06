@@ -22,7 +22,7 @@ void go_to_sleep() {
 
     byte next_wakeup = (int(hour(t)/wakeup_interval_hours)+1)*wakeup_interval_hours % 24;
     Serial.println("Setting next wakeup at " + String(next_wakeup) + ":00");
-    RTC.setAlarm(ALM1_MATCH_HOURS, 0, 0, next_wakeup, 0);
+    RTC.setAlarm(ALM1_MATCH_HOURS, 0, 30, next_wakeup, 0);
     RTC.alarm(ALARM_1);
 
     sleep_enable();
@@ -38,8 +38,8 @@ void go_to_sleep() {
     Serial.println("Woke up at " + String(hour(t)) + ":" + String(minute(t)));
 }
 
-#define NSAMPLES 5
-#define ANALOGINPUTS 3
+#define NSAMPLES 60
+#define ANALOGINPUTS 5
 
 volatile bool time_to_sample = false;
 
@@ -48,8 +48,8 @@ void sample_interrupt() {
 }
 
 void sample_loop() {
-    int sampling_duration = 3;
-    int analog_input[ANALOGINPUTS] = {8, 9, 10};
+    int sampling_duration = 60;
+    int analog_input[ANALOGINPUTS] = {1, 2, 3, 4, 5};
     char temp_cstr[128];
     bool led_value = false;
     time_t t = RTC.get();
@@ -123,11 +123,52 @@ void sample_loop() {
     digitalWrite(LED_BUILTIN, LOW);
 }
 
+const int AB_RELAY = 26;
+const int FLUX_RECV_RELAY = 28;
+const int DISABLE_6M_RELAY = 40;
+
+void enable_relays() {
+  digitalWrite(AB_RELAY, HIGH);
+  digitalWrite(FLUX_RECV_RELAY, HIGH);
+  digitalWrite(DISABLE_6M_RELAY, HIGH);
+}
+
+void disable_relays() {
+  digitalWrite(AB_RELAY, LOW);
+  digitalWrite(FLUX_RECV_RELAY, LOW);
+  digitalWrite(DISABLE_6M_RELAY, LOW);
+}
+
+time_t compileTime()
+{
+    const time_t FUDGE(10);    //fudge factor to allow for upload time, etc. (seconds, YMMV)
+    const char *compDate = __DATE__, *compTime = __TIME__, *months = "JanFebMarAprMayJunJulAugSepOctNovDec";
+    char compMon[4], *m;
+
+    strncpy(compMon, compDate, 3);
+    compMon[3] = '\0';
+    m = strstr(months, compMon);
+
+    tmElements_t tm;
+    tm.Month = ((m - months) / 3 + 1);
+    tm.Day = atoi(compDate + 4);
+    tm.Year = atoi(compDate + 7) - 1970;
+    tm.Hour = atoi(compTime);
+    tm.Minute = atoi(compTime + 3);
+    tm.Second = atoi(compTime + 6);
+
+    time_t t = makeTime(tm);
+    return t + FUDGE;        //add fudge factor to allow for compile time
+}
+
 void setup() {
     Serial.begin(9600);
     while(!Serial);
     pinMode(LED_BUILTIN, OUTPUT);
     pinMode(interruptPin, INPUT_PULLUP);
+    pinMode(AB_RELAY, OUTPUT);
+    pinMode(FLUX_RECV_RELAY, OUTPUT);
+    pinMode(DISABLE_6M_RELAY, OUTPUT);
     digitalWrite(LED_BUILTIN,HIGH);
 
     // Init alarm to null
@@ -140,6 +181,10 @@ void setup() {
     RTC.squareWave(SQWAVE_NONE);
     RTC.alarmInterrupt(ALARM_1, true);
 
+    RTC.set(compileTime()); // Don't leave uncommented
+
+    delay(10000);
+
     int CS=53;
     if(!SD.begin(CS)) {
       Serial.println("Failed to initialize SD card");
@@ -148,8 +193,10 @@ void setup() {
 }
 
 void loop() {
-    delay(5000);//wait 5 seconds before going to sleep. In real senairio keep this as small as posible
+    enable_relays();
+    delay(1000);
+    sample_loop();
+    disable_relays();
+    delay(1000);
     go_to_sleep();
-    //sample_loop();
-//    while(1);
 }
