@@ -263,7 +263,7 @@ static void set_zenith(float target_zenith) {
 
   int nudge_duration = 1024;
   
-  while(nudge_duration > 16) {
+  while(nudge_duration > 8) {
     pre_too_low = get_zenith() < target_zenith;
     if(pre_too_low) {
       set_direction_increase_zenith();
