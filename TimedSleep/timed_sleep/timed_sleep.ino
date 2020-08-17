@@ -24,7 +24,7 @@
 const int time_interval=1;// Sets the wakeup intervall in minutes
 
 void setup() {
-  Serial.begin(115200);//Start Serial Comunication
+  Serial.begin(9600);//Start Serial Comunication
   pinMode(LED_BUILTIN,OUTPUT);//We use the led on pin 13 to indecate when Arduino is A sleep
   pinMode(interruptPin,INPUT_PULLUP);//Set pin d2 to input using the buildin pullup resistor
   digitalWrite(LED_BUILTIN,HIGH);//turning LED on

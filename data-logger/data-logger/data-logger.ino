@@ -181,7 +181,7 @@ void setup() {
     RTC.squareWave(SQWAVE_NONE);
     RTC.alarmInterrupt(ALARM_1, true);
 
-    RTC.set(compileTime()); // Don't leave uncommented
+    //RTC.set(compileTime()); // Don't leave uncommented
 
     delay(10000);
 
