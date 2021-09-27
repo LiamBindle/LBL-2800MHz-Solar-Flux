@@ -9,6 +9,31 @@
 
 const int wakeup_interval_hours = 6;
 
+void start_serial() {
+    Serial.begin(9600);
+    while(!Serial);
+}
+
+bool start_sd() {
+    int CS=53;
+    if(!SD.begin(CS)) {
+      Serial.println("Failed to initialize the SD card");
+      return false;
+    }
+    Serial.println("Successfully initialized the SD card");
+    return true;
+}
+
+void stop_serial() {
+  Serial.end();
+}
+
+void stop_sd() {
+  SD.end();
+}
+
+
+
 void wakeup(){
     sleep_disable();
     detachInterrupt(0);
@@ -22,7 +47,7 @@ void go_to_sleep() {
 
     byte next_wakeup = (int(hour(t)/wakeup_interval_hours)+1)*wakeup_interval_hours % 24;
     Serial.println("Setting next wakeup at " + String(next_wakeup) + ":00");
-    RTC.setAlarm(ALM1_MATCH_HOURS, 0, 30, next_wakeup, 0);
+    RTC.setAlarm(ALM1_MATCH_HOURS, 0, 0, next_wakeup, 0);
     RTC.alarm(ALARM_1);
 
     sleep_enable();
@@ -30,8 +55,10 @@ void go_to_sleep() {
     set_sleep_mode(SLEEP_MODE_PWR_DOWN);
     digitalWrite(LED_BUILTIN,LOW);
     Serial.println("Going to sleep at " + String(hour(t)) + ":" + String(minute(t)));
+    stop_serial();
     delay(1000); // wait to allow ops to finish before sleeping
     sleep_cpu();
+    start_serial();
 
     digitalWrite(LED_BUILTIN,HIGH);
     t=RTC.get();
@@ -123,6 +150,26 @@ void sample_loop() {
     digitalWrite(LED_BUILTIN, LOW);
 }
 
+bool start_sd_with_retries() {
+  // fast blink LED for up-to an hour to signal that SD card failed to be initialized
+  int blink_ms = 100;
+  long max_n_blinks = 3600l * 10l; // 1 hour with 10 blinks per second
+  
+  for(int b = 0; b < max_n_blinks; b++) {
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(100);
+    digitalWrite(LED_BUILTIN, LOW);
+    delay(100);
+
+    if ((b % 100) == 0) { // every 10 seconds retry initializing card
+      if (start_sd()) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 const int AB_RELAY = 26;
 const int FLUX_RECV_RELAY = 28;
 const int DISABLE_6M_RELAY = 40;
@@ -162,8 +209,7 @@ time_t compileTime()
 }
 
 void setup() {
-    Serial.begin(9600);
-    while(!Serial);
+    start_serial();
     pinMode(LED_BUILTIN, OUTPUT);
     pinMode(interruptPin, INPUT_PULLUP);
     pinMode(AB_RELAY, OUTPUT);
@@ -184,19 +230,16 @@ void setup() {
     //RTC.set(compileTime()); // Don't leave uncommented
 
     delay(10000);
-
-    int CS=53;
-    if(!SD.begin(CS)) {
-      Serial.println("Failed to initialize SD card");
-      while(1);
-    }
 }
 
 void loop() {
-    enable_relays();
-    delay(1000);
-    sample_loop();
-    disable_relays();
-    delay(1000);
     go_to_sleep();
+    if (start_sd_with_retries()) {
+        enable_relays();
+        delay(1000);
+        sample_loop();
+        disable_relays();
+        delay(1000);
+        stop_sd();
+    }
 }
